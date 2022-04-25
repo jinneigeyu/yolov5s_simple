@@ -1,0 +1,8 @@
+train
+run
+__pycache__
+.vscode
+runs
+*.temp
+log
+test_imgs
