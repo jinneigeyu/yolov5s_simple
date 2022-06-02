@@ -31,16 +31,19 @@ IMG_SIZE = 640
 
 colors = Colors()
 names = ["head", "back", "person"]
+# names = ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog',
+#         'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
+
 
 def compute_pre(
     model,
     input,
     src,
     conf_thres=0.35,
-    iou_thres=0.25,
+    iou_thres=0.15,
     classes=None,
     agnostic_nms=False,
-    max_det=20,
+    max_det=15,
 ):
     t2 = time_sync()
     pre, _ = model(input)
@@ -57,6 +60,7 @@ def compute_pre(
             for *xyxy, conf, cls in reversed(det):
                 label = ""
                 c = int(cls)
+                # label=names[c]
                 label=names[c]
                 annotator.box_label(xyxy, label, color=colors(c, True))
         im0 = annotator.result()
@@ -66,29 +70,28 @@ def compute_pre(
 
 @torch.no_grad()
 def main():
-    # model_pth='save_1.pt'
-    # net = YOLOV5S(imgSize=IMG_SIZE,nc=3 ,anchors=anchors,istrain=False)
-    # net.load_state_dict(torch.load(model_pth))
+
     with open('hyp.yaml', errors="ignore") as f:
         hyp = yaml.safe_load(f)  # load hyps dict
     device = "cuda"  
     anchors= generate_anchors(hyp['auto_anchors'],device)    
 
 
-    model = YOLOV5S(640, 3, anchors=anchors)
+    model = YOLOV5S(IMG_SIZE, hyp['num_class'], anchors=anchors)
     model.half()
     model.cuda()
-    model_pth = "save_100.pt"
+    model_pth = "run/2022-06-02-133033/mode_100_.pt"
     model.load_state_dict(torch.load(model_pth))
     model.eval()
 
     stride, names = model.head[-1].stride, ["head", "back", "person"]
-    imgsz = 640
-    dataset = LoadImages("./test_imgs", img_size=imgsz, stride=stride[2])
+    
+    dataset = LoadImages("./test_imgs", img_size=IMG_SIZE, stride=stride[2])
     for path, im, im0s, vid_cap, s in dataset:
         img = cv2.imread(path)
+        # img=cv2.resize(img,(IMG_SIZE,IMG_SIZE))
         src = img.copy()
-        img = letterbox(img,(640,640),stride=32,auto=False)[0]
+        img = letterbox(img,(IMG_SIZE,IMG_SIZE),stride=32,auto=False)[0]
        
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
         img = np.ascontiguousarray(img)
@@ -97,6 +100,8 @@ def main():
         im_t /= 255
         im_t = im_t[None]
         im_t=im_t.half()
+        
+        
         compute_pre(model, im_t, src)
 
 

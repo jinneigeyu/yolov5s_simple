@@ -18,14 +18,13 @@ class Loss:
         self.nc = 3
         self.BCE_cls = nn.BCEWithLogitsLoss()
         self.BCE_obj = nn.BCEWithLogitsLoss()
-
+        self.upPositive=True
+        
     def set_tg(self, gti, bn_id, anc_id, gridij, xywh, cls):
 
         gti[bn_id, anc_id, gridij[1], gridij[0], :4] = xywh  # [-0.5,1.5]
         gti[bn_id, anc_id, gridij[1], gridij[0], 4] = 1  # 标记此处为有物体
-        gti[
-            bn_id, anc_id, gridij[1], gridij[0], (cls.long() + 5).item()
-        ] = 1  # 类别one-hot
+        gti[bn_id, anc_id, gridij[1], gridij[0], (cls.long() + 5).item()] = 1  # 类别one-hot
 
     def generate_gtojb_anchors_indices(self, gt_i, anchors_i):
         # a layer have 3 anchor size
@@ -70,35 +69,51 @@ class Loss:
                         wh = box[2:] * pi_size
 
                         gridij = xy.long()
-                        self.set_tg(gti,batch_index,a_id,gridij,torch.cat((xy - gridij, wh), dim=0),cls,)
+                        offset=xy - gridij
+                        offset_value=offset 
+                        self.set_tg(gti,batch_index,a_id,gridij,torch.cat((offset_value, wh), dim=0),cls,)
 
                         # 开始正采样 区相与gt的相邻网格为gt
-                        judge = (xy - gridij) - 0.5
+                        judge = offset - 0.5
+                        # 正采样的 cxcy 计算似乎有些问题
+                        grid_up_new = gridij.clone()
+                        
+                        if self.upPositive:
+                        # 
+                            if judge[0] < 0:  # h
 
-                        grid_add = gridij.clone()
+                                grid_up_new[0] = (gridij[0] - 1).clamp(0)
+                                offset_value[0] = 1 +offset[0]                           
+                                if grid_up_new[0] !=  gridij[0]:
+                                    self.set_tg(gti,batch_index,a_id,grid_up_new,torch.cat((offset_value, wh), dim=0),cls,)
 
-                        if judge[0] < 0:
+                                grid_up_new[0] = gridij[0]
+                                offset_value=offset
+                                if judge[1] < 0: # w
+                                    grid_up_new[1] = (gridij[1] - 1).clamp(0)
+                                    offset_value[1] =1 +offset[1]   
+                                elif judge[1] > 0:
+                                    grid_up_new[1] = (gridij[1] + 1).clamp(0, pi_size[1]-1)
+                                    offset_value[1] = offset[1] -1                            
+                                if  grid_up_new[1] !=  gridij[1]:
+                                    self.set_tg(gti,batch_index,a_id,grid_up_new,torch.cat((offset_value, wh), dim=0),cls,)
 
-                            grid_add[0] = (gridij[0] - 1).clamp(0)
-                            self.set_tg(gti,batch_index,a_id,grid_add,torch.cat((xy - grid_add, wh), dim=0),cls,)
+                            elif judge[0] > 0:
+                                grid_up_new[0] = (gridij[0] + 1).clamp(0, pi_size[0]-1)
+                                offset_value[0] = 1 - offset[0]
+                                if grid_up_new[0] !=  gridij[0]:
+                                    self.set_tg(gti,batch_index,a_id,grid_up_new,torch.cat((offset_value, wh), dim=0),cls,)
 
-                            grid_add[0] = gridij[0]
-                            if judge[1] < 0:
-                                grid_add[1] = (gridij[1] - 1).clamp(0)
-                            elif judge[1] > 0:
-                                grid_add[1] = (gridij[1] + 1).clamp(0, pi_size[0])
-                            self.set_tg(gti,batch_index,a_id,grid_add,torch.cat((xy - grid_add, wh), dim=0),cls,)
-
-                        elif judge[0] > 0:
-                            grid_add[0] = (gridij[0] + 1).clamp(0, pi_size[0])
-                            self.set_tg(gti,batch_index,a_id,grid_add,torch.cat((xy - grid_add, wh), dim=0),cls,)
-
-                            grid_add[0] = gridij[0]
-                            if judge[1] < 0:
-                                grid_add[1] = (gridij[1] - 1).clamp(0)
-                            elif judge[1] > 0:
-                                grid_add[1] = (gridij[1] + 1).clamp(0, pi_size[0])
-                            self.set_tg(gti,batch_index,a_id,grid_add,torch.cat((xy - grid_add, wh), dim=0),cls,)
+                                grid_up_new[0] = gridij[0]
+                                offset_value=offset
+                                if judge[1] < 0:
+                                    grid_up_new[1] = (gridij[1] - 1).clamp(0)
+                                    offset_value[1] =1 +offset[1] 
+                                elif judge[1] > 0:
+                                    grid_up_new[1] = (gridij[1] + 1).clamp(0, pi_size[1]-1)
+                                    offset_value[1] = offset[1] -1  
+                                if  grid_up_new[1] !=  gridij[1]:
+                                    self.set_tg(gti,batch_index,a_id,grid_up_new,torch.cat((offset_value, wh), dim=0),cls,)
             else:
                 gti = torch.zeros_like(pi)
 

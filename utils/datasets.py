@@ -46,6 +46,8 @@ class  LoadImgandLabels(Dataset):
                     raise Exception(  f'do not have a label for image {nam}')
                 
                 val = np.loadtxt(os.path.join(self.labels_folder,lab))
+                if len(val.shape)<2 and val.size != 0:
+                    val=val[None,:]
                 self.labels.append(val)
             
         except  Exception as ex: 
@@ -64,7 +66,7 @@ class  LoadImgandLabels(Dataset):
                 labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
                 
         hyp=self.hyp
-        if self.augment:
+        if self.augment and labels.size !=0 :
                 img, labels = random_perspective(img, labels,
                                                  degrees=hyp['degrees'],
                                                  translate=hyp['translate'],
@@ -74,8 +76,9 @@ class  LoadImgandLabels(Dataset):
         nl = len(labels)
         if nl:
             labels[:, 1:5] = xyxy2xywhn(labels[:, 1:5], w=img.shape[1], h=img.shape[0], clip=True, eps=1e-3)
-            
-        if self.augment:
+        else:
+            a=1    
+        if self.augment and nl:
                 # Albumentations
             img, labels = self.albumentations(img, labels)
             nl = len(labels)  # update after albumentations

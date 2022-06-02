@@ -17,11 +17,18 @@ from utils.general import LOGGER
 warnings.filterwarnings("ignore", category=UserWarning)
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import argparse
+import datetime
 
 IMG_DIR='../git_repos/massage_datasets/images/train/'
 ANNOS_DIR='../git_repos/massage_datasets/labels/train/'
 IMG_DIR_VAL='../git_repos/massage_datasets/images/val/'
 ANNOS_DIR_VA='../git_repos/massage_datasets/labels/val/'
+
+# IMG_DIR='../git_repos/datasets/VOC/images/train2012/'
+# ANNOS_DIR='../git_repos/datasets/VOC/labels/train2012/'
+# IMG_DIR_VAL='../git_repos/datasets/VOC/images/test2007/'
+# ANNOS_DIR_VA='../git_repos/datasets/VOC/labels/test2007/'
+
 IMG_SZ=640
 
 def parse_opt():
@@ -32,8 +39,8 @@ def parse_opt():
     parser.add_argument('--annos_dir_valid', type=str, default=ANNOS_DIR_VA, help='valid annotations folder')    
     parser.add_argument('--weights', type=str, default=None, help='initial weights path')
     parser.add_argument('--hyp', type=str, default='hyp.yaml', help='hyperparameters path')
-    parser.add_argument('--epochs', type=int, default=150)
-    parser.add_argument('--batch-size', type=int, default=4, help='total batch size for all GPUs, -1 for autobatch')
+    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--batch-size', type=int, default=6, help='total batch size for all GPUs, -1 for autobatch')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='train, val image size (pixe)')
     parser.add_argument('--image-weights', action='store_true', help='use weighted image selection for training')
     parser.add_argument('--device', default='cuda', help='cuda or cpu')
@@ -41,6 +48,7 @@ def parse_opt():
     parser.add_argument('--workers', type=int, default=0, help='max dataloader workers (per RANK in DDP mode)')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--auto_anchor', default=True, help='use kmeans to generate anchors')
+    parser.add_argument('--out_dir',default='run',help='output directory to save model parameters')
     opt =parser.parse_args()
     for i in vars(opt).items():
         print(f'{i[0]} : {i[1]}')
@@ -67,12 +75,26 @@ def write_infos(losses,pr_aps,lr,file='result.csv',createNew=False):
             f.writelines( [content] )
     else : 
         with open(file,"a") as f:
-            header='Precision \t Recall \t mAP_0.5 \t mAP_0.50.95'
+            header='box_loss \t obj_loss \t cls_loss \t Precision \t Recall \t mAP@0.5 \t mAP@0.5_.95 \t lr \n'
             write_content(f, [header,content])
         
-
+def get_out_folder(out_dir='run'):
+    if os.path.exists(out_dir) is False:
+        os.mkdir(out_dir)
+    
+    time = str(datetime.datetime.now())
+    time = time.replace(':','')
+    time = time.replace(' ','-')
+    time = time.split('.')[0]
+    
+    out_model_folder= os.path.join(out_dir,time)
+    os.mkdir(out_model_folder)
+    return out_model_folder
 
 def train(opt):
+    
+    out_folder = get_out_folder(opt.out_dir)
+    
     with open(opt.hyp, errors="ignore") as f:
         hyp = yaml.safe_load(f)  # load hyps dict
     
@@ -96,6 +118,13 @@ def train(opt):
     
     # optimizer
     optimizer= torch.optim.SGD(model.parameters(),lr=hyp['lr'],momentum=hyp['momentum'])
+    if opt.optimizer == 'SGD':
+        optimizer =torch.optim.SGD(model.parameters(),lr=hyp['lr'],momentum=hyp['momentum'])
+    if opt.optimizer =='Adam':
+        optimizer =torch.optim.Adam(model.parameters(),lr=hyp['lr'])
+    if opt.optimizer =='AdamW':
+        optimizer =torch.optim.AdamW(model.parameters(),lr=hyp['lr'])
+        
     lf= lf = lambda x: (1 - x / epochs) * (1.0 - hyp["lr"]) + hyp["lr"]
     
     # lr scheduler
@@ -117,9 +146,9 @@ def train(opt):
         model.cuda()
     
     # tensorboard gragp
-    fake_img = torch.randn(1, 3, 640, 640)
+    fake_img = torch.randn(1, 3, IMG_SZ, IMG_SZ)
     fake_img = fake_img.to(device)
-    writer = SummaryWriter('./log')
+    writer = SummaryWriter(out_folder)
    
     writer.add_graph(model, fake_img)
 
@@ -167,12 +196,13 @@ def train(opt):
         print('\t\t\t\t\t\t %.3f      %.3f     %.3f     %.3f' % (val_results[0],val_results[1],val_results[2],val_results[3]))   
         model.float()
         torch.cuda.empty_cache()
-        write_infos(mloss,val_results,scheduler.optimizer.param_groups[0]["lr"],createNew= C)
+        write_infos(mloss,val_results,scheduler.optimizer.param_groups[0]["lr"],file=os.path.join(out_folder,'result.csv'),createNew= C)
         C=False
-        if epoch == 80 :
-             torch.save(model.state_dict(), "save_80.pt")
+        if epoch %5 == 0:
+            torch.save(model.state_dict(),  os.path.join( out_folder ,'mode_'+str(epoch)+'_.pt'))
             
-    torch.save(model.state_dict(), "save_100.pt")
+    torch.save(model.state_dict(),  os.path.join( out_folder ,'mode_'+str(epochs)+'_.pt'))
+    
 def main():
     opt=parse_opt()
     train(opt)

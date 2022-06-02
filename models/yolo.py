@@ -149,7 +149,7 @@ class Detect(nn.Module):
                 self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
                 yop = x[i].sigmoid()  #  to [0,1]
                 yop[..., 0:2] = (yop[..., 0:2] * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy ([-0.5,1.5] + gridxy) * stride
-                yop[..., 2:4] = (yop[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh ([0,4])*anchors_wh
+                yop[..., 2:4] = (yop[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # dw dh ([0,4])*anchors_wh
 
                 y.append(yop.view(batch_size, -1, self.no))  # y[0].shape = []
 
