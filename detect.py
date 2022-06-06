@@ -73,13 +73,12 @@ def main():
 
     with open('hyp.yaml', errors="ignore") as f:
         hyp = yaml.safe_load(f)  # load hyps dict
-    device = "cuda"  
-    anchors= generate_anchors(hyp['auto_anchors'],device)    
-
-
+    device = "cuda"
+    anchors= generate_anchors(hyp['auto_anchors'],device)
     model = YOLOV5S(IMG_SIZE, hyp['num_class'], anchors=anchors)
     model.half()
-    model.cuda()
+    if device != 'cpu':
+        model.cuda()
     model_pth = "run/2022-06-02-133033/mode_100_.pt"
     model.load_state_dict(torch.load(model_pth))
     model.eval()
@@ -99,8 +98,8 @@ def main():
         im_t = im_t.float()
         im_t /= 255
         im_t = im_t[None]
-        im_t=im_t.half()
-        
+        if device !='cpu':
+            im_t=im_t.half()
         
         compute_pre(model, im_t, src)
 

@@ -54,9 +54,7 @@ class C3(nn.Module):
     def forward(self, x):
         x1 = self.m(self.conv1(x))
         x2 = self.conv2(x)
-        x = self.conv3(
-            torch.cat((x1, x2), dim=1)
-        )  #  tensor[-1, C , H W] , concat C channel , so dim=1 ,
+        x = self.conv3(torch.cat((x1, x2), dim=1))  #  tensor[-1, C , H W] , concat C channel , so dim=1 ,
         return x
 
 
@@ -197,82 +195,42 @@ class YOLOV5S(nn.Module):
 
         # back
         backbone_dict_8 = []
-        backbone_dict_8.append(
-            ("P1", Conv(3, 32, 6, 2, 2))
-        )  # P1 1/2 （640-6+2*2）/2 +1  = 320  also can be focus model
-        backbone_dict_8.append(
-            ("P2", Conv(32, 64, 3, 2, 1))
-        )  # P2 1/4 (320-3+2*1) /2 +1  = 160.5
+        backbone_dict_8.append(("P1", Conv(3, 32, 6, 2, 2)) )  # P1 1/2 （640-6+2*2）/2 +1  = 320  also can be focus model
+        backbone_dict_8.append(("P2", Conv(32, 64, 3, 2, 1)) )  # P2 1/4 (320-3+2*1) /2 +1  = 160.5
         backbone_dict_8.append(("P2_C", C3(64, 64)))
-        backbone_dict_8.append(
-            ("P3", Conv(64, 128, 3, 2))
-        )  # P3 1/8 (160-3+2*1) /2 +1  = 80
-        backbone_dict_8.append(
-            ("P3_C", C3(128, 128))
-        )  # P3  channels not changed , use this to  branch_out
+        backbone_dict_8.append(("P3", Conv(64, 128, 3, 2)))  # P3 1/8 (160-3+2*1) /2 +1  = 80
+        backbone_dict_8.append(("P3_C", C3(128, 128)))  # P3  channels not changed , use this to  branch_out
 
         backbone_dict_16 = []
-        backbone_dict_16.append(
-            ("P4", Conv(128, 256, 3, 2))
-        )  # P4  1/16 (80 -3+ 2*1)/2 +1 = 40
+        backbone_dict_16.append(("P4", Conv(128, 256, 3, 2)))  # P4  1/16 (80 -3+ 2*1)/2 +1 = 40
         backbone_dict_16.append(("P4_C", C3(256, 256)))  # 1/16 branch_out
 
         backbone_dict_32 = []
-        backbone_dict_32.append(
-            ("P5", Conv(256, 512, 3, 2))
-        )  # P5  1/16 (40 -3+ 2*1)/2 +1 = 20
-        backbone_dict_32.append(
-            ("P5_C3", C3(512, 512))
-        )  # P5  1/16 (40 -3+ 2*1)/2 +1 = 20
-        backbone_dict_32.append(
-            ("P5_SPPF", SPPF(512, 512))
-        )  # P5  1/16 (40 -3+ 2*1)/2 +1 = 20
-        backbone_dict_32.append(
-            ("P5_Tail", Conv(512, 256, kernel_size=1, stride=1, padding=0))
-        )  # head_32_1   (20 -1+ 2*0)/1 +1 = 20
+        backbone_dict_32.append(("P5", Conv(256, 512, 3, 2)))  # P5  1/16 (40 -3+ 2*1)/2 +1 = 20
+        backbone_dict_32.append(("P5_C3", C3(512, 512)))  # P5  1/16 (40 -3+ 2*1)/2 +1 = 20
+        backbone_dict_32.append(("P5_SPPF", SPPF(512, 512)))  # P5  1/16 (40 -3+ 2*1)/2 +1 = 20
+        backbone_dict_32.append(("P5_Tail", Conv(512, 256, kernel_size=1, stride=1, padding=0)))  # head_32_1   (20 -1+ 2*0)/1 +1 = 20
 
         # head
         head = []
-        head.append(
-            ("head_1_up", nn.Upsample(scale_factor=2, mode="nearest"))
-        )  # 20 - >  40
-        head.append(
-            ("head_2_cat", Concat(dim=1))
-        )  # cat 40-40 ,  channels = 256+256 : P4_C and head_1_up
+        head.append(("head_1_up", nn.Upsample(scale_factor=2, mode="nearest")))  # 20 - >  40
+        head.append(("head_2_cat", Concat(dim=1)))  # cat 40-40 ,  channels = 256+256 : P4_C and head_1_up
         head.append(("head_3", C3(512, 256, shortcut=False)))  # c=40 channels = 256
-        head.append(
-            ("head_4", Conv(256, 128, kernel_size=1, stride=1, padding=0))
-        )  # to catted
-        head.append(
-            ("head_5_up", nn.Upsample(scale_factor=2, mode="nearest"))
-        )  # 40 - >  80
-        head.append(
-            ("head_6_cat", Concat(dim=1))
-        )  # cat 80_80 , channels =  128+128=256 : head_5_up  and   P3_C  , c
-        head.append(
-            ("head_7", C3(256, 128, False))
-        )  # size = 80 , channels = 128   # 1 to detect1 ; 2 to downsample 40
+        head.append(("head_4", Conv(256, 128, kernel_size=1, stride=1, padding=0)))  # to catted
+        head.append(("head_5_up", nn.Upsample(scale_factor=2, mode="nearest")))  # 40 - >  80
+        head.append(("head_6_cat", Concat(dim=1)))  # cat 80_80 , channels =  128+128=256 : head_5_up  and   P3_C  , c
+        head.append(("head_7", C3(256, 128, False)))  # size = 80 , channels = 128   # 1 to detect1 ; 2 to downsample 40
 
         chs.append(128)
 
-        head.append(
-            ("head_8", Conv(128, 128, kernel_size=3, stride=2, padding=1))
-        )  # size =  (80-3+2*1)/2 +1 =40 , channels =128
-        head.append(
-            ("head_9", Concat())
-        )  # cat  head_8 and  head_4  size = 40 channels = 128+128 = 256
-        head.append(
-            ("head_10", C3(256, 256, shortcut=False))
-        )  # size = 40 , channels = 256
+        head.append(("head_8", Conv(128, 128, kernel_size=3, stride=2, padding=1)))  # size =  (80-3+2*1)/2 +1 =40 , channels =128
+        head.append(("head_9", Concat()))  # cat  head_8 and  head_4  size = 40 channels = 128+128 = 256
+        head.append(("head_10", C3(256, 256, shortcut=False)))  # size = 40 , channels = 256
 
         chs.append(256)
 
-        head.append(
-            ("head_11", Conv(256, 256, kernel_size=3, stride=2, padding=1))
-        )  # size =   (40 -3+ 2*1)/2 +1 = 20
-        head.append(
-            ("head_12_cat", Concat())
-        )  # cat head_11 and # P5_Tail  size = 20+20=40  channesl= 2* 256 = 512
+        head.append(("head_11", Conv(256, 256, kernel_size=3, stride=2, padding=1)))  # size =   (40 -3+ 2*1)/2 +1 = 20
+        head.append(("head_12_cat", Concat()))  # cat head_11 and # P5_Tail  size = 20+20=40  channesl= 2* 256 = 512
         head.append(("head_13", C3(512, 512, shortcut=False)))
 
         chs.append(512)
