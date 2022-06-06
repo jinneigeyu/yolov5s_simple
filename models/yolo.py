@@ -224,7 +224,7 @@ class YOLOV5S(nn.Module):
         chs.append(128)
 
         head.append(("head_8", Conv(128, 128, kernel_size=3, stride=2, padding=1)))  # size =  (80-3+2*1)/2 +1 =40 , channels =128
-        head.append(("head_9", Concat()))  # cat  head_8 and  head_4  size = 40 channels = 128+128 = 256
+        head.append(("head_9_cat", Concat()))  # cat  head_8 and  head_4  size = 40 channels = 128+128 = 256
         head.append(("head_10", C3(256, 256, shortcut=False)))  # size = 40 , channels = 256
 
         chs.append(256)
@@ -248,27 +248,29 @@ class YOLOV5S(nn.Module):
         return self.head_names_list.index(name)
 
     def forward(self, x):
-        x0 = self.backbone8(x)  # p3
-        x1 = self.backbone16(x0)  # p4
-        x2 = self.backbone32(x1)  # p5
+        # if input : 640x640
+        x0 = self.backbone8(x)    # p3   1/8    80x80
+        x1 = self.backbone16(x0)  # p4   1/16   40x40
+        x2 = self.backbone32(x1)  # p5   1/32   20x20
 
-        head_x1 = self.head[self._get_head_model_index("head_1_up")](x2)
-        head_x1 = self.head[self._get_head_model_index("head_2_cat")]((head_x1, x1))
-        head_x1 = self.head[self._get_head_model_index("head_3")](head_x1)
-        head_x1 = self.head[self._get_head_model_index("head_4")](head_x1)
+        mid_tensor_40x40 = self.head[self._get_head_model_index("head_1_up")](x2) # up 20x20 -> 40x40
+        mid_tensor_40x40 = self.head[self._get_head_model_index("head_2_cat")]((mid_tensor_40x40, x1)) # concat
+        mid_tensor_40x40 = self.head[self._get_head_model_index("head_3")](mid_tensor_40x40)
+        mid_tensor_40x40 = self.head[self._get_head_model_index("head_4")](mid_tensor_40x40)
 
-        head_x2 = self.head[self._get_head_model_index("head_5_up")](head_x1)
-        head_x2 = self.head[self._get_head_model_index("head_6_cat")]((head_x2, x0))
+        mid_tensor_80x80 = self.head[self._get_head_model_index("head_5_up")](mid_tensor_40x40) # up 40x40 -> 80x80
+        mid_tensor_80x80 = self.head[self._get_head_model_index("head_6_cat")]((mid_tensor_80x80, x0))
+        
+        output_80x80 = self.head[self._get_head_model_index("head_7")](mid_tensor_80x80)
+        
+        output_40x40 = self.head[self._get_head_model_index("head_8")](output_80x80) # conv : size = (80-3+2*1)/2 +1 =40 , channels =128
+        output_40x40 = self.head[self._get_head_model_index("head_9_cat")]((output_40x40, mid_tensor_40x40))
+        output_40x40 = self.head[self._get_head_model_index("head_10")](output_40x40)
+        
+        output_20x20 = self.head[self._get_head_model_index("head_11")](output_40x40) # conv : size = (40 -3+ 2*1)/2 +1 = 20
+        output_20x20 = self.head[self._get_head_model_index("head_12_cat")]((output_20x20, x2))
+        output_20x20 = self.head[self._get_head_model_index("head_13")](output_20x20)
 
-        head_x2 = self.head[self._get_head_model_index("head_7")](head_x2)
-        head_x3 = self.head[self._get_head_model_index("head_8")](head_x2)
-        head_x3 = self.head[self._get_head_model_index("head_9")]((head_x3, head_x1))
-
-        head_x3 = self.head[self._get_head_model_index("head_10")](head_x3)
-        head_x4 = self.head[self._get_head_model_index("head_11")](head_x3)
-        head_x4 = self.head[self._get_head_model_index("head_12_cat")]((head_x4, x2))
-        head_x4 = self.head[self._get_head_model_index("head_13")](head_x4)
-
-        x = self.head[-1]([head_x2, head_x3, head_x4])
+        x = self.head[-1]([output_80x80, output_40x40, output_20x20])  # [ 1/8 , 1/16 , 1/32 ]
 
         return x
