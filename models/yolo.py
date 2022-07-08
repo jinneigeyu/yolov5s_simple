@@ -11,8 +11,8 @@ class Conv(nn.Module):
 
     def __init__(self, cin, cout, kernel_size=1, stride=1, padding=1):
         super().__init__()
-        self.conv = nn.Conv2d(cin, cout, kernel_size, stride, padding=padding)
-        self.bn = nn.BatchNorm2d(cout)
+        self.conv = nn.Conv2d( int(cin), int(cout), kernel_size, stride, padding=padding)
+        self.bn = nn.BatchNorm2d(int(cout))
         self.act = nn.SiLU()
 
     def forward(self, x):
@@ -23,8 +23,8 @@ class Bottleneck(nn.Module):
     def __init__(self, cin, cout, shortcut=True, e=1):
         super().__init__()
         c_ = int(cin * e)  # hidden channels
-        self.cv1 = Conv(cin, c_, 1, 1, 0)
-        self.cv2 = Conv(c_, cout, 1, 1, 0)
+        self.cv1 = Conv(int(cin), c_, 1, 1, 0)
+        self.cv2 = Conv(c_, int(cout), 1, 1, 0)
         self.shortcut = shortcut
         self.add = self.shortcut and cin == cout
 
@@ -42,10 +42,10 @@ class C3(nn.Module):
     def __init__(self, cin, cout, shortcut=True, n=1, e=1):
         super().__init__()
         c_ = cin * e
-        self.conv1 = Conv(cin, c_, 1, 1, 0)
-        self.conv2 = Conv(cin, c_, 1, 1, 0)
+        self.conv1 = Conv(int(cin), c_, 1, 1, 0)
+        self.conv2 = Conv(int(cin), c_, 1, 1, 0)
 
-        self.conv3 = Conv(2 * c_, cout, 1, 1, 0)  # conv3' input is cv1 cv2 concate
+        self.conv3 = Conv(2 * c_, int(cout), 1, 1, 0)  # conv3' input is cv1 cv2 concate
 
         self.m = nn.Sequential()
         for i in range(n):
@@ -75,8 +75,8 @@ class SPPF(nn.Module):
     def __init__(self, cin, cout, kernel_size=5):
         super().__init__()
         c_ = cin // 2
-        self.conv1 = Conv(cin, c_, 1, 1, 0)
-        self.conv2 = Conv(c_ * 2 * 2, cout, 1, 1, 0)
+        self.conv1 = Conv(int(cin), c_, 1, 1, 0)
+        self.conv2 = Conv(c_ * 2 * 2, int(cout), 1, 1, 0)
         self.m = nn.MaxPool2d(
             kernel_size=kernel_size, stride=1, padding=kernel_size // 2
         )
@@ -110,7 +110,7 @@ class Detect(nn.Module):
         self.nlayres = len(anchors)  # number of detect layers
         self.na = len(anchors[0])  #  anchors of a layer
         
-        self.no = self.nc + 5  #  number output :  nums_classes +  box + confidence
+        self.no = 5 + self.nc #  number output :  nums_classes +  box + confidence
         assert self.nlayres == len(chs)
 
         self.grid = [torch.zeros(1)] * self.nlayres  # init grid
@@ -187,6 +187,8 @@ class YOLOV5S(nn.Module):
         self.no = nc + 5
         self.imgSize = imgSize
         self.nc = nc
+        # self.scale = 0.5
+        self.scale = 1
         self._build_net()
 
     def _build_net(self):
@@ -195,45 +197,45 @@ class YOLOV5S(nn.Module):
 
         # back
         backbone_dict_8 = []
-        backbone_dict_8.append(("P1", Conv(3, 32, 6, 2, 2)) )  # P1 1/2 （640-6+2*2）/2 +1  = 320  also can be focus model
-        backbone_dict_8.append(("P2", Conv(32, 64, 3, 2, 1)) )  # P2 1/4 (320-3+2*1) /2 +1  = 160.5
-        backbone_dict_8.append(("P2_C", C3(64, 64)))
-        backbone_dict_8.append(("P3", Conv(64, 128, 3, 2)))  # P3 1/8 (160-3+2*1) /2 +1  = 80
-        backbone_dict_8.append(("P3_C", C3(128, 128)))  # P3  channels not changed , use this to  branch_out
+        backbone_dict_8.append(("P1", Conv(3,  32 *self.scale, 6, 2, 2)) )  # P1 1/2 （640-6+2*2）/2 +1  = 320  also can be focus model
+        backbone_dict_8.append(("P2", Conv(32 *self.scale, 64 *self.scale, 3, 2, 1)) )  # P2 1/4 (320-3+2*1) /2 +1  = 160.5
+        backbone_dict_8.append(("P2_C", C3(64 *self.scale, 64 *self.scale)))
+        backbone_dict_8.append(("P3", Conv(64 *self.scale, 128 *self.scale, 3, 2)))  # P3 1/8 (160-3+2*1) /2 +1  = 80
+        backbone_dict_8.append(("P3_C", C3(128 *self.scale, 128 *self.scale)))  # P3  channels not changed , use this to  branch_out
 
         backbone_dict_16 = []
-        backbone_dict_16.append(("P4", Conv(128, 256, 3, 2)))  # P4  1/16 (80 -3+ 2*1)/2 +1 = 40
-        backbone_dict_16.append(("P4_C", C3(256, 256)))  # 1/16 branch_out
+        backbone_dict_16.append(("P4", Conv(128 *self.scale, 256 *self.scale, 3, 2)))  # P4  1/16 (80 -3+ 2*1)/2 +1 = 40
+        backbone_dict_16.append(("P4_C", C3(256 *self.scale, 256 *self.scale)))  # 1/16 branch_out
 
         backbone_dict_32 = []
-        backbone_dict_32.append(("P5", Conv(256, 512, 3, 2)))  # P5  1/16 (40 -3+ 2*1)/2 +1 = 20
-        backbone_dict_32.append(("P5_C3", C3(512, 512)))  # P5  1/16 (40 -3+ 2*1)/2 +1 = 20
-        backbone_dict_32.append(("P5_SPPF", SPPF(512, 512)))  # P5  1/16 (40 -3+ 2*1)/2 +1 = 20
-        backbone_dict_32.append(("P5_Tail", Conv(512, 256, kernel_size=1, stride=1, padding=0)))  # head_32_1   (20 -1+ 2*0)/1 +1 = 20
+        backbone_dict_32.append(("P5", Conv(256 *self.scale, 512 *self.scale, 3, 2)))  # P5  1/16 (40 -3+ 2*1)/2 +1 = 20
+        backbone_dict_32.append(("P5_C3", C3(512 *self.scale, 512 *self.scale)))  # P5  1/16 (40 -3+ 2*1)/2 +1 = 20
+        backbone_dict_32.append(("P5_SPPF", SPPF(512 *self.scale, 512 *self.scale)))  # P5  1/16 (40 -3+ 2*1)/2 +1 = 20
+        backbone_dict_32.append(("P5_Tail", Conv(512 *self.scale, 256 *self.scale, kernel_size=1, stride=1, padding=0)))  # head_32_1   (20 -1+ 2*0)/1 +1 = 20
 
         # head
         head = []
         head.append(("head_1_up", nn.Upsample(scale_factor=2, mode="nearest")))  # 20 - >  40
         head.append(("head_2_cat", Concat(dim=1)))  # cat 40-40 ,  channels = 256+256 : P4_C and head_1_up
-        head.append(("head_3", C3(512, 256, shortcut=False)))  # c=40 channels = 256
-        head.append(("head_4", Conv(256, 128, kernel_size=1, stride=1, padding=0)))  # to catted
+        head.append(("head_3", C3(512 *self.scale, 256 *self.scale, shortcut=False)))  # c=40 channels = 256
+        head.append(("head_4", Conv(256 *self.scale, 128 *self.scale, kernel_size=1, stride=1, padding=0)))  # to catted
         head.append(("head_5_up", nn.Upsample(scale_factor=2, mode="nearest")))  # 40 - >  80
         head.append(("head_6_cat", Concat(dim=1)))  # cat 80_80 , channels =  128+128=256 : head_5_up  and   P3_C  , c
-        head.append(("head_7", C3(256, 128, False)))  # size = 80 , channels = 128   # 1 to detect1 ; 2 to downsample 40
+        head.append(("head_7", C3(256 *self.scale, 128 *self.scale, False)))  # size = 80 , channels = 128   # 1 to detect1 ; 2 to downsample 40
 
-        chs.append(128)
+        chs.append(128 *self.scale)
 
-        head.append(("head_8", Conv(128, 128, kernel_size=3, stride=2, padding=1)))  # size =  (80-3+2*1)/2 +1 =40 , channels =128
+        head.append(("head_8", Conv(128 *self.scale, 128 *self.scale, kernel_size=3, stride=2, padding=1)))  # size =  (80-3+2*1)/2 +1 =40 , channels =128
         head.append(("head_9_cat", Concat()))  # cat  head_8 and  head_4  size = 40 channels = 128+128 = 256
-        head.append(("head_10", C3(256, 256, shortcut=False)))  # size = 40 , channels = 256
+        head.append(("head_10", C3(256 *self.scale, 256 *self.scale, shortcut=False)))  # size = 40 , channels = 256
 
-        chs.append(256)
+        chs.append(256 *self.scale)
 
-        head.append(("head_11", Conv(256, 256, kernel_size=3, stride=2, padding=1)))  # size =   (40 -3+ 2*1)/2 +1 = 20
+        head.append(("head_11", Conv(256 *self.scale, 256 *self.scale, kernel_size=3, stride=2, padding=1)))  # size =   (40 -3+ 2*1)/2 +1 = 20
         head.append(("head_12_cat", Concat()))  # cat head_11 and # P5_Tail  size = 20+20=40  channesl= 2* 256 = 512
-        head.append(("head_13", C3(512, 512, shortcut=False)))
+        head.append(("head_13", C3(512 *self.scale, 512 *self.scale, shortcut=False)))
 
-        chs.append(512)
+        chs.append(512 *self.scale)
         detect = Detect(self.anchors, self.nc, chs)
 
         head.append(("head_14_detect", detect))

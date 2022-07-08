@@ -39,7 +39,7 @@ def parse_opt():
     parser.add_argument('--annos_dir_valid', type=str, default=ANNOS_DIR_VA, help='valid annotations folder')    
     parser.add_argument('--weights', type=str, default=None, help='initial weights path')
     parser.add_argument('--hyp', type=str, default='hyp.yaml', help='hyperparameters path')
-    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--epochs', type=int, default=120)
     parser.add_argument('--batch-size', type=int, default=6, help='total batch size for all GPUs, -1 for autobatch')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='train, val image size (pixe)')
     parser.add_argument('--image-weights', action='store_true', help='use weighted image selection for training')
@@ -61,7 +61,7 @@ def write_infos(losses,pr_aps,lr,file='result.csv',createNew=False):
         f.seek(0,2)
         f.writelines( contents )
          
-    content=" %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.4f \t %.6f \n" % (losses[0].item(),losses[1].item(),losses[2].item(),pr_aps[0],pr_aps[1],pr_aps[2],pr_aps[3],lr)
+    content=" %.4f \t %.5f \t %.5f \t %.5f \t %.4f \t %.4f \t %.4f \t %.6f \n" % (losses[0].item(),losses[1].item(),losses[2].item(),pr_aps[0],pr_aps[1],pr_aps[2],pr_aps[3],lr)
      
     if os.path.exists(file) and createNew:
         os.remove(file)
@@ -113,6 +113,9 @@ def train(opt):
         with open(opt.hyp, 'w') as f:
             f.write(yaml.dump(hyp))
         anchors= generate_anchors(hyp['auto_anchors'],device)
+        with open( os.path.join(out_folder,opt.hyp) , 'w') as f:
+            f.write(yaml.dump(hyp))
+        
     # model
     model=YOLOV5S(imgSize=IMG_SZ,nc=hyp['num_class'],anchors=anchors)
     
@@ -124,17 +127,18 @@ def train(opt):
         optimizer =torch.optim.Adam(model.parameters(),lr=hyp['lr'])
     if opt.optimizer =='AdamW':
         optimizer =torch.optim.AdamW(model.parameters(),lr=hyp['lr'])
-        
-    lf= lf = lambda x: (1 - x / epochs) * (1.0 - hyp["lr"]) + hyp["lr"]
+    
+    smooth_lr_epochnum =  int(epochs*0.8)
+    lf = lambda x: (1 - x / smooth_lr_epochnum) * (1.0 - hyp["lr"]) + hyp["lr"]
     
     # lr scheduler
-    scheduler=torch.optim.lr_scheduler.LambdaLR(optimizer,lr_lambda=lf)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,lr_lambda=lf)
     
     # loss
     compute_loss = Loss(anchors=(model.head[-1].anchors),hyp=hyp)
     
     # pre_trained
-    pre_trained= None if opt.weights is None else True   
+    pre_trained = None if opt.weights is None else True   
     if pre_trained:
         model.load_state_dict(torch.load(hyp.weights))
     
@@ -167,6 +171,9 @@ def train(opt):
         for i,(imgs,targets,path,_) in pbar: 
             imgs = imgs.to(device).float()/255
             
+            # if  len(targets) == 0: 
+            #     print(len(targets))
+            
             with amp.autocast(enabled=True):
                 pred = model(imgs)
                 loss , loss_items= compute_loss(pred, targets.to(device))
@@ -187,8 +194,11 @@ def train(opt):
                                                                *mloss,
                                                                targets.shape[0],
                                                                imgs.shape[-1],))
-        
-        scheduler.step()
+        if epoch < smooth_lr_epochnum:
+            scheduler.step()
+        else:
+            scheduler.optimizer.param_groups[0]["lr"] = scheduler.optimizer.param_groups[0]["lr"] * 0.95
+            
         # valid
         val_results=val.run(val_loader,model,compute_loss,'cuda')        
         

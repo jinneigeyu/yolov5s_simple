@@ -134,23 +134,28 @@ class Loss:
             gt = gts[i]
             batch_size = pre_i.shape[0]
             tobj = torch.zeros_like(pre_i[..., 0], device=device)  # target obj
-            obj_ids, anchs = self.generate_gtojb_anchors_indices(gt, self.anchors[i])
+            
+            if torch.count_nonzero(gt):
+                obj_ids, anchs = self.generate_gtojb_anchors_indices(gt, self.anchors[i])
 
-            pxy = pre_i[obj_ids][:, :2].sigmoid() * 2 - 0.5
-            pwh = (pre_i[obj_ids][:, 2:4].sigmoid() * 2) ** 2 * anchs[obj_ids]
-            pbox = torch.cat((pxy, pwh), 1)
-            pbox = pbox.permute(1, 0)
-            gbox = gt[obj_ids][:, :4].permute(1, 0)
-            ciou = bbox_iou(pbox, gbox.T, x1y1x2y2=False, CIoU=True)
-            # ciou2=bbox_iou(pbox,gbox , x1y1x2y2=False, CIoU=True)
-            lbox = lbox + (1 - ciou).mean()
+                pxy = pre_i[obj_ids][:, :2].sigmoid() * 2 - 0.5
+                pwh = (pre_i[obj_ids][:, 2:4].sigmoid() * 2) ** 2 * anchs[obj_ids]
+                pbox = torch.cat((pxy, pwh), 1)
+                pbox = pbox.permute(1, 0)
+                gbox = gt[obj_ids][:, :4].permute(1, 0)
+                ciou = bbox_iou(pbox, gbox.T, x1y1x2y2=False, CIoU=True)
+                # ciou2=bbox_iou(pbox,gbox , x1y1x2y2=False, CIoU=True)
+                lbox = lbox + (1 - ciou).mean()
 
-            lcls = lcls + self.BCE_cls(pre_i[obj_ids][:, 5:], gt[obj_ids][:, 5:])
+                if torch.isnan(lbox): 
+                    print('nan lbox')
 
-            score_iou = ciou.detach().clamp(0).type(tobj.dtype)
-            # 获取 obj_ids  gridj gridi
+                lcls = lcls + self.BCE_cls(pre_i[obj_ids][:, 5:], gt[obj_ids][:, 5:])
 
-            tobj[obj_ids] = score_iou
+                score_iou = ciou.detach().clamp(0).type(tobj.dtype)
+                # 获取 obj_ids  gridj gridi
+
+                tobj[obj_ids] = score_iou
 
             lobj = lobj + self.BCE_obj(pre_i[..., 4], tobj)
 

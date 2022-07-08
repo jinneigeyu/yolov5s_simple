@@ -30,7 +30,7 @@ TEST_FOLDER = "data\\test\\"
 IMG_SIZE = 640
 
 colors = Colors()
-names = ["head", "back", "person"]
+# names = ["head", "back", "circle"]
 # names = ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog',
 #         'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
 
@@ -39,11 +39,12 @@ def compute_pre(
     model,
     input,
     src,
-    conf_thres=0.35,
+    conf_thres=0.25,
     iou_thres=0.15,
+    names=None,
     classes=None,
     agnostic_nms=False,
-    max_det=15,
+    max_det=20,
 ):
     t2 = time_sync()
     pre, _ = model(input)
@@ -58,9 +59,7 @@ def compute_pre(
         if len(det):
             det[:, :4] = scale_coords(input.shape[2:], det[:, :4], src.shape).round()
             for *xyxy, conf, cls in reversed(det):
-                label = ""
                 c = int(cls)
-                # label=names[c]
                 label=names[c]
                 annotator.box_label(xyxy, label, color=colors(c, True))
         im0 = annotator.result()
@@ -70,16 +69,19 @@ def compute_pre(
 
 @torch.no_grad()
 def main():
-
-    with open('hyp.yaml', errors="ignore") as f:
+    run_folder = 'run/2022-06-09-155158'
+    with open( os.path.join( run_folder,'hyp.yaml'), errors="ignore") as f:
         hyp = yaml.safe_load(f)  # load hyps dict
+    # device = "cuda"
     device = "cuda"
     anchors= generate_anchors(hyp['auto_anchors'],device)
     model = YOLOV5S(IMG_SIZE, hyp['num_class'], anchors=anchors)
-    model.half()
+    
     if device != 'cpu':
+        model.half()
         model.cuda()
-    model_pth = "run/2022-06-02-133033/mode_100_.pt"
+        
+    model_pth = os.path.join( run_folder,'mode_120_.pt')
     model.load_state_dict(torch.load(model_pth))
     model.eval()
 
@@ -98,10 +100,11 @@ def main():
         im_t = im_t.float()
         im_t /= 255
         im_t = im_t[None]
+        
         if device !='cpu':
             im_t=im_t.half()
         
-        compute_pre(model, im_t, src)
+        compute_pre(model, im_t, src,names=hyp['classnames'])
 
 
 if __name__ == "__main__":
